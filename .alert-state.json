@@ -1,0 +1,43 @@
+{
+  "detectedAt": "2026-09-03T06:24:33.173Z",
+  "lastAlertAt": "2026-09-03T06:24:33.173Z",
+  "alertsSent": 1,
+  "maximumAlerts": 10,
+  "dates": [
+    "2026-09-17T00:00:00",
+    "2026-09-18T00:00:00",
+    "2026-09-19T00:00:00",
+    "2026-09-20T00:00:00",
+    "2026-09-21T00:00:00",
+    "2026-09-22T00:00:00",
+    "2026-09-23T00:00:00",
+    "2026-09-24T00:00:00",
+    "2026-09-25T00:00:00",
+    "2026-09-26T00:00:00",
+    "2026-09-27T00:00:00",
+    "2026-09-28T00:00:00",
+    "2026-09-29T00:00:00",
+    "2026-09-30T00:00:00"
+  ],
+  "bookingUrls": [
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F17%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F18%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F19%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F20%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F21%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F22%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F23%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F24%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F25%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F26%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F27%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F28%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F29%2F2026",
+    "https://www.cineplex.com/movie/the-odyssey?locationId=9406&date=9%2F30%2F2026"
+  ],
+  "cutoff": "2026-09-16T00:00:00Z",
+  "filmId": "37617",
+  "locationId": "9406",
+  "experiences": "imax-70mm",
+  "note": "Delete this file from the repository to reset the watcher and allow a new sequence of alerts."
+}
