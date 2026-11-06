@@ -4,10 +4,10 @@ A self-contained GitHub Actions service that watches the Cineplex API for new
 bookable IMAX 70mm dates for **Dune: Part Three** and emails you when they
 appear.
 
-> The repository is still called `cineplex-odyssey-watcher` because it
-> started out watching **The Odyssey**. It now watches Dune: Part Three; see
-> [Watch a different film](#watch-a-different-film) to point it at something
-> else next time.
+> This repository (`cineplex-movie-watcher`, formerly
+> `cineplex-odyssey-watcher`) started out watching **The Odyssey**. It now
+> watches Dune: Part Three; see [Watch a different film](#watch-a-different-film)
+> to point it at something else next time.
 
 It runs entirely on GitHub's servers. Nothing runs on your computer, and it
 keeps working when your computer is off.
@@ -316,7 +316,7 @@ Node.js, a terminal, or WSL.
 ### Step 1 — Create the repository
 
 1. Go to **[github.com/new](https://github.com/new)**.
-2. **Repository name**: `cineplex-odyssey-watcher`
+2. **Repository name**: `cineplex-movie-watcher`
 3. **Description** (optional): `Watches Cineplex for new IMAX 70mm dates`
 4. Choose **Private**, or **Public** if you followed the
    [Actions minutes](#read-this-before-you-deploy-actions-minutes) advice.

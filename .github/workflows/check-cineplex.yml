@@ -46,7 +46,7 @@ permissions:
 # between "write the file" and "push the file", which would replay the same
 # alert number forever.
 concurrency:
-  group: cineplex-odyssey-watcher
+  group: cineplex-movie-watcher
   cancel-in-progress: false
 
 jobs:
