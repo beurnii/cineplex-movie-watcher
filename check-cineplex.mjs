@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Cineplex "The Odyssey" 70mm bookable-date watcher.
+ * Cineplex "Dune: Part Three" IMAX 70mm bookable-date watcher.
  *
  * The settings you are most likely to change are immediately below, right at
  * the top of this file. A full explanation of how everything works - including
@@ -35,30 +35,34 @@ import { randomUUID } from "node:crypto";
  * an alert sequence that is already in progress will just carry on and the new
  * cutoff will never be evaluated.
  *
- * 2026-09-16 is the last date currently bookable at this cinema, so the watcher
+ * 2027-01-14 is the last date currently bookable at this cinema (as of
+ * 2026-11-06 the API offers 2026-12-14 through 2027-01-14), so the watcher
  * stays quiet until Cineplex opens something genuinely new. Because the test is
  * strictly greater-than, that last date does NOT count as a detection.
  *
  * To rehearse the alert path for real, set this one day earlier
- * ("2026-09-15T00:00:00Z") and delete .alert-state.json - the date Cineplex
+ * ("2027-01-13T00:00:00Z") and delete .alert-state.json - the date Cineplex
  * already offers then qualifies, and the whole sequence runs end to end.
  */
-const CUTOFF_ISO = "2026-09-16T00:00:00Z";
+const CUTOFF_ISO = "2027-01-14T00:00:00Z";
 
 /** How many failure notifications to trigger, in total, per detection. */
 const MAX_ALERTS = 10;
 
-/** Cineplex internal film id for "The Odyssey". */
-const FILM_ID = "37617";
+/**
+ * Cineplex internal film id for "Dune: Part Three". It is the `filmId` in any
+ * showtimes or bookable-dates request the cineplex.com site makes for the film.
+ */
+const FILM_ID = "37998";
 
 /**
  * Which cinema to watch. "9406" is Cinéma Banque Scotia Montréal.
  *
  * Set this to an empty string ("") to watch every Cineplex location in Canada
- * instead. Narrowing to one cinema genuinely changes the answer: nationally the
- * film has 45 bookable dates starting 2026-08-03, but at 9406 it has 44,
- * starting 2026-08-04. The LAST bookable date happens to be the same
- * (2026-09-16) for both today, which is why the cutoff did not need changing.
+ * instead. Narrowing to one cinema can genuinely change the answer (for The
+ * Odyssey, Canada had one more bookable date than 9406 did). For Dune: Part
+ * Three the two lists are currently identical - 31 dates, 2026-12-14 through
+ * 2027-01-14 - so the cutoff would be the same either way today.
  *
  * Like the experience filter, an unrecognised id fails SILENTLY: the API
  * answers HTTP 200 with [] rather than an error. Verify any new value by
@@ -71,10 +75,14 @@ const LOCATION_ID = "9406";
  *
  * "imax-70mm" is IMAX 70mm (15-perf), which is the premium format worth
  * queueing for. It is NOT the same thing as "70mm", which also matches plain
- * 5-perf 70mm prints. Both are real, and for this film they are genuinely
- * different showings: on 2026-08-04 the API reports 32 sessions tagged
- * ["IMAX","70mm"] across 8 theatres, plus 14 sessions tagged only ["70mm"]
- * at 4 other theatres.
+ * 5-perf 70mm prints. Both can be real at once: for The Odyssey the API
+ * reported 32 sessions tagged ["IMAX","70mm"] across 8 theatres on one day,
+ * plus 14 sessions tagged only ["70mm"] at 4 other theatres.
+ *
+ * At 9406 today, Dune: Part Three plays only in IMAX 70mm (sessions tagged
+ * ["IMAX","70mm"] in Salle 13), so "imax-70mm", "70mm", "imax" and no filter
+ * all return the same 31 dates. Keeping "imax-70mm" is what stops a future
+ * digital-only or plain-70mm date from triggering an alert.
  *
  * Known-good values seen on this endpoint:
  *   imax-70mm   IMAX 70mm
@@ -90,13 +98,15 @@ const LOCATION_ID = "9406";
 const EXPERIENCES = "imax-70mm";
 
 /**
- * Used only to build the "buy tickets" links that appear in the alert.
+ * Used only to build the "buy tickets" links and the wording of the alert.
  *
- * FILM_SLUG is the film's page name on cineplex.com: the "the-odyssey" in
- * https://www.cineplex.com/movie/the-odyssey. THEATRE_NAME is cosmetic - it is
- * just what the alert calls your cinema.
+ * FILM_SLUG is the film's page name on cineplex.com: the "dune-part-three" in
+ * https://www.cineplex.com/movie/dune-part-three. The showtimes API reports it
+ * as "filmUrl". FILM_TITLE and THEATRE_NAME are cosmetic - they are just what
+ * the logs and the alert call the film and your cinema.
  */
-const FILM_SLUG = "the-odyssey";
+const FILM_SLUG = "dune-part-three";
+const FILM_TITLE = "Dune: Part Three";
 const THEATRE_NAME = "Cinéma Banque Scotia Montréal";
 
 /* ===========================================================================
@@ -131,14 +141,15 @@ const MAX_RECURSION_DEPTH = 12;
  * =========================================================================== */
 /**
  * ============================================================================
- * Cineplex "The Odyssey" 70mm bookable-date watcher
+ * Cineplex "Dune: Part Three" IMAX 70mm bookable-date watcher
  * ============================================================================
  *
  * WHAT THIS DOES
  * --------------
  * Asks the Cineplex public showtimes API which dates are currently bookable
- * for film 37617 ("The Odyssey") in IMAX 70mm at Cinéma Banque Scotia Montréal,
- * and reports whether ANY bookable date is strictly later than a cutoff date.
+ * for film 37998 ("Dune: Part Three") in IMAX 70mm at Cinéma Banque Scotia
+ * Montréal, and reports whether ANY bookable date is strictly later than a
+ * cutoff date.
  * All three of those - film, format and cinema - are set in SETTINGS above.
  *
  * It never sends email itself. It decides what should happen and tells the
@@ -185,11 +196,11 @@ const MAX_RECURSION_DEPTH = 12;
  * ---------------------------------------------------------------------------
  * ABOUT TIME ZONES (please read)
  * ---------------------------------------------------------------------------
- * The API returns "naive" timestamps with no zone, e.g. "2026-09-16T00:00:00".
+ * The API returns "naive" timestamps with no zone, e.g. "2027-01-14T00:00:00".
  * JavaScript parses a naive date-TIME as LOCAL time but a naive date-ONLY
- * ("2026-09-16") as UTC. Relying on that difference is a real bug: on a
- * machine in America/Toronto, Date.parse("2026-09-16T00:00:00") is four hours
- * LARGER than Date.parse("2026-09-16T00:00:00Z"), so the cutoff date itself
+ * ("2027-01-14") as UTC. Relying on that difference is a real bug: on a
+ * machine in America/Toronto, Date.parse("2027-01-14T00:00:00") is five hours
+ * LARGER than Date.parse("2027-01-14T00:00:00Z"), so the cutoff date itself
  * would look "later than the cutoff" and fire a false alarm.
  *
  * So we normalise explicitly: any timestamp with no zone is interpreted as
@@ -263,9 +274,9 @@ function failTechnical(title, details) {
   // Newlines are stripped: annotation messages are a single line. Use %0A if
   // you ever want a literal line break inside an annotation.
   const oneLine = `${title} -- ${String(details).replace(/\s+/g, " ")}`;
-  console.error(`::error title=Odyssey watcher TECHNICAL FAILURE::${clip(oneLine, 800)}`);
+  console.error(`::error title=Dune watcher TECHNICAL FAILURE::${clip(oneLine, 800)}`);
   setOutput("mode", "error");
-  addSummary(`## Odyssey watcher: technical failure\n\n**${title}**\n\nThis is *not* a date alert.`);
+  addSummary(`## Dune watcher: technical failure\n\n**${title}**\n\nThis is *not* a date alert.`);
   process.exit(1);
 }
 
@@ -304,7 +315,7 @@ function alertSummary(alertNumber, maximum, dates, cutoff) {
     .map((d) => `| **${d.slice(0, 10)}** | [🎟 Buy tickets →](${bookingUrl(d)}) |`)
     .join("\n");
   return [
-    `# 🎟 New IMAX 70mm date for The Odyssey`,
+    `# 🎟 New IMAX 70mm date for ${FILM_TITLE}`,
     ``,
     `**${THEATRE_NAME}** has opened ${dates.length} bookable date(s) later than \`${cutoff}\`.`,
     ``,
@@ -451,7 +462,7 @@ function collectDateCandidates(node, keyHint = null, path = "$", depth = 0, foun
  * The live endpoint currently returns a BARE ARRAY of date strings with no
  * object keys anywhere:
  *
- *   ["2026-08-03T00:00:00", ..., "2026-09-16T00:00:00"]
+ *   ["2026-12-14T00:00:00", ..., "2027-01-14T00:00:00"]
  *
  * so there are no key names to filter on. An implementation that only accepted
  * values under a key called "date"/"dates" would find nothing at all here and
@@ -622,7 +633,7 @@ async function fetchBookableDates() {
       // loudly, because a silently mis-configured watcher is the worst
       // outcome here.
       console.log("");
-      console.log(`::warning title=Odyssey watcher::No bookable dates returned for ` +
+      console.log(`::warning title=Dune watcher::No bookable dates returned for ` +
         `experiences="${EXPERIENCES}" locationId="${LOCATION_ID || "(all)"}". ` +
         `That is normal once a film finishes its run, but it is also what an invalid experience filter ` +
         `or an unknown locationId returns - both answer HTTP 200 with an empty list instead of an error. ` +
@@ -722,10 +733,10 @@ async function main() {
 
   const nowIso = new Date().toISOString();
   console.log("=".repeat(70));
-  console.log("Cineplex 'The Odyssey' 70mm bookable-date watcher");
+  console.log(`Cineplex '${FILM_TITLE}' IMAX 70mm bookable-date watcher`);
   console.log("=".repeat(70));
   console.log(`Run started (UTC): ${nowIso}`);
-  console.log(`Film id:           ${FILM_ID}`);
+  console.log(`Film:              ${FILM_TITLE} (id ${FILM_ID})`);
   console.log(`Experience filter: ${EXPERIENCES}`);
   console.log(`Location:          ${LOCATION_ID || "(all Cineplex locations)"}`);
   console.log(`Cutoff (UTC):      ${CUTOFF_ISO}`);
