@@ -1,14 +1,18 @@
-name: Cineplex Odyssey 70mm watcher
+name: Cineplex Dune 3 IMAX 70mm watcher
 
 # ---------------------------------------------------------------------------
 # WHEN THIS RUNS
 # ---------------------------------------------------------------------------
 on:
   schedule:
-    # Roughly every 15 minutes, deliberately offset from :00/:15/:30/:45.
-    # Those round times are the busiest moments on GitHub's scheduler, so runs
-    # queued then tend to start latest. GitHub cron is ALWAYS in UTC.
-    - cron: "7,22,37,52 * * * *"
+    # Twice a day, at 01:23 and 13:23 UTC. GitHub cron is ALWAYS in UTC and
+    # does not follow daylight saving, so in Montréal that is:
+    #   8:23 AM and 8:23 PM while Eastern is on standard time (Nov-Mar)
+    #   9:23 AM and 9:23 PM while Eastern is on daylight time (Mar-Nov)
+    # The minute is deliberately not :00/:15/:30/:45. Those round times are
+    # the busiest moments on GitHub's scheduler, so runs queued then tend to
+    # start latest.
+    - cron: "23 1,13 * * *"
 
   # Lets you start a run yourself from the Actions tab at any time.
   workflow_dispatch:
@@ -42,7 +46,7 @@ permissions:
 # between "write the file" and "push the file", which would replay the same
 # alert number forever.
 concurrency:
-  group: cineplex-odyssey-watcher
+  group: cineplex-movie-watcher
   cancel-in-progress: false
 
 jobs:
@@ -122,7 +126,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Odyssey watcher: alert ${ALERT_NUMBER} of ${MAX_ALERTS}"
+          git commit -m "Dune watcher: alert ${ALERT_NUMBER} of ${MAX_ALERTS}"
 
           # Retry the push in case the branch moved while we were working (for
           # example you edited the README from the website mid-run).
@@ -135,12 +139,12 @@ jobs:
             git fetch origin "${BRANCH}"
             if ! git rebase "origin/${BRANCH}"; then
               git rebase --abort || true
-              echo "::error title=Odyssey watcher TECHNICAL FAILURE::Could not rebase .alert-state.json onto ${BRANCH}. Resolve the conflict by hand, or delete .alert-state.json to reset the watcher."
+              echo "::error title=Dune watcher TECHNICAL FAILURE::Could not rebase .alert-state.json onto ${BRANCH}. Resolve the conflict by hand, or delete .alert-state.json to reset the watcher."
               exit 1
             fi
           done
 
-          echo "::error title=Odyssey watcher TECHNICAL FAILURE::Could not push .alert-state.json after 3 attempts. Check Settings > Actions > General > Workflow permissions is set to 'Read and write permissions', and that branch protection is not blocking github-actions[bot]."
+          echo "::error title=Dune watcher TECHNICAL FAILURE::Could not push .alert-state.json after 3 attempts. Check Settings > Actions > General > Workflow permissions is set to 'Read and write permissions', and that branch protection is not blocking github-actions[bot]."
           exit 1
 
       # -------------------------------------------------------------------
@@ -163,7 +167,7 @@ jobs:
           BOOKING_URL: ${{ steps.check.outputs.booking_url }}
         run: |
           echo "==================================================================="
-          echo " CINEPLEX ODYSSEY IMAX 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
+          echo " CINEPLEX DUNE: PART THREE IMAX 70mm ALERT ${ALERT_NUMBER} OF ${MAX_ALERTS}"
           echo "==================================================================="
           echo "Cutoff (UTC):     ${CUTOFF}"
           echo "Qualifying dates: ${DATES}"
@@ -178,7 +182,7 @@ jobs:
           # failure email itself and we cannot put anything inside it, but the
           # annotation is the first thing on the run page that the email's
           # "View results" link opens, and the Summary tab has a clickable one.
-          echo "::error title=Cineplex Odyssey IMAX 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than ${CUTOFF}: ${DATES}. BUY TICKETS: ${BOOKING_URL}"
+          echo "::error title=Cineplex Dune 3 IMAX 70mm alert::A qualifying date was found. Alert ${ALERT_NUMBER} of ${MAX_ALERTS}. Dates later than ${CUTOFF}: ${DATES}. BUY TICKETS: ${BOOKING_URL}"
           exit 1
 
       # -------------------------------------------------------------------
@@ -193,7 +197,7 @@ jobs:
           echo "No Cineplex date was found. Nothing was committed."
           echo "The real alert counter was not changed and the watcher is unaffected."
           echo ""
-          echo "::error title=TEST ALERT (drill, not a real Odyssey date)::Forced test notification. No qualifying date was found and no state was changed."
+          echo "::error title=TEST ALERT (drill, not a real Dune date)::Forced test notification. No qualifying date was found and no state was changed."
           exit 1
 
       # -------------------------------------------------------------------
@@ -209,5 +213,5 @@ jobs:
             echo "All ${MAX_ALERTS} notifications have already been triggered."
             echo "Delete .alert-state.json from the repository to reset the watcher."
           else
-            echo "No qualifying dates. Watcher is healthy and will check again shortly."
+            echo "No qualifying dates. Watcher is healthy and will check again in about 12 hours."
           fi

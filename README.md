@@ -1,7 +1,13 @@
-# Cineplex "The Odyssey" IMAX 70mm date watcher — Montréal
+# Cineplex "Dune: Part Three" IMAX 70mm date watcher — Montréal
 
 A self-contained GitHub Actions service that watches the Cineplex API for new
-bookable dates for **The Odyssey** and emails you when they appear.
+bookable IMAX 70mm dates for **Dune: Part Three** and emails you when they
+appear.
+
+> This repository (`cineplex-movie-watcher`, formerly
+> `cineplex-odyssey-watcher`) started out watching **The Odyssey**. It now
+> watches Dune: Part Three; see [Watch a different film](#watch-a-different-film)
+> to point it at something else next time.
 
 It runs entirely on GitHub's servers. Nothing runs on your computer, and it
 keeps working when your computer is off.
@@ -32,9 +38,9 @@ create, and no secret to store.
 
 ## How it works
 
-Every 15 minutes GitHub runs a small Node.js script. The script asks Cineplex
-which dates are currently bookable for The Odyssey, and compares them against a
-cutoff date.
+Twice a day GitHub runs a small Node.js script. The script asks Cineplex which
+dates are currently bookable for Dune: Part Three in IMAX 70mm, and compares
+them against a cutoff date.
 
 The clever part is how it emails you. GitHub does not offer "send me an email"
 as a workflow action, but it *does* email you when a workflow **fails**. So
@@ -42,11 +48,12 @@ when the watcher finds a new date, it deliberately fails the workflow. That
 failure is the notification.
 
 To avoid a single alert being easy to miss, the watcher repeats that deliberate
-failure on each of the next ten runs, then goes quiet.
+failure on each of the following runs until it has failed ten times in total,
+then goes quiet.
 
 ```
                  ┌──────────────────────────────┐
-   every 15 min  │  Does .alert-state.json       │
+   twice a day   │  Does .alert-state.json       │
    ───────────►  │  exist in the repository?     │
                  └───────────┬──────────────────┘
                              │
@@ -84,14 +91,14 @@ emailed forever.
 | Thing | Value |
 |---|---|
 | API endpoint | `https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable` |
-| Film ID | `37617` (The Odyssey) |
+| Film ID | `37998` (Dune: Part Three) |
 | Location | `9406` — Cinéma Banque Scotia Montréal |
 | Experience filter | `imax-70mm` (IMAX 70mm, 15-perf) |
-| Cutoff | `2026-09-16T00:00:00Z` (UTC) |
+| Cutoff | `2027-01-14T00:00:00Z` (UTC) |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
-| Schedule | `7,22,37,52 * * * *` — four times an hour, UTC |
-| Alerts per detection | 10 |
-| Time to receive them all | roughly 2.5 hours |
+| Schedule | `23 1,13 * * *` — twice a day, 01:23 and 13:23 UTC |
+| Alerts per detection | 10 (one per run) |
+| Time to receive them all | roughly 4.5 days (the first at detection, then one every ~12 hours) |
 | State file | `.alert-state.json`, committed to the default branch |
 | Dependencies | none |
 | Secrets required | none |
@@ -99,43 +106,65 @@ emailed forever.
 The full request is:
 
 ```text
-https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37617&locationId=9406&experiences=imax-70mm
+https://apis.cineplex.com/prod/cpx/theatrical/api/v1/dates/bookable?filmId=37998&locationId=9406&experiences=imax-70mm
 ```
 
-which currently returns a plain list of 44 dates:
+which, as of 2026-11-06, returns a plain list of 31 dates:
 
 ```json
-["2026-08-03T00:00:00","2026-08-04T00:00:00", ... ,"2026-09-16T00:00:00"]
+["2026-12-14T00:00:00","2026-12-15T00:00:00","2026-12-17T00:00:00", ... ,"2027-01-14T00:00:00"]
 ```
 
-Three observations about that response, all of which shaped the code:
+### Where the cutoff came from
+
+The cineplex.com site asks a different endpoint for the showtimes on one
+particular day, for example:
+
+```text
+https://apis.cineplex.com/prod/cpx/theatrical/api/v1/showtimes?language=en&locationId=9406&date=1%2F14%2F2027&filmId=37998&experiences=imax-70mm
+```
+
+That request is where the film id, cinema and format above were taken from.
+On 2026-11-06 it returned four IMAX 70mm sessions on 14 January 2027 (12:15,
+15:30, 18:45 and 22:00, all in Salle 13 - IMAX), and 2027-01-14 is the **last**
+date in the bookable list. So the cutoff is set to that date: the watcher stays
+quiet while 14 January is the furthest-out date, and alerts as soon as
+Cineplex opens 15 January or anything later.
+
+The watcher deliberately asks `dates/bookable` rather than `showtimes`: one
+request covers every date at once, and the answer is a simple list of dates
+instead of a large per-session document.
+
+### Things about the response that shaped the code
 
 0. **It is scoped to one cinema.** Without `locationId` the API answers for all
-   of Canada: 45 dates starting 2026-08-03. With `locationId=9406` it answers
-   for Montréal only: 44 dates starting 2026-08-04. The **last** date is
-   `2026-09-16` either way today, which is why the cutoff is the same for both.
-   An unknown `locationId` returns HTTP 200 with `[]` rather than an error, so
-   the checker warns loudly whenever the list comes back empty.
+   of Canada. For Dune: Part Three the national list is currently identical to
+   Montréal's (31 dates, 2026-12-14 to 2027-01-14), but that is not
+   guaranteed: for The Odyssey, Canada had one more date than Montréal. An
+   unknown `locationId` returns HTTP 200 with `[]` rather than an error, so the
+   checker warns loudly whenever the list comes back empty.
 1. **It is a bare array with no object keys at all.** An extractor that only
    trusted values found under a key named `date`/`dates` would find nothing
    here and would silently never alert. The extractor therefore accepts any
    string that is *entirely* an ISO-8601 date, and only uses key names as a
    tie-breaker if the response ever gains a wrapper object.
-2. **The last date it returns is currently `2026-09-16T00:00:00` — exactly the
+2. **The last date it returns is currently `2027-01-14T00:00:00` — exactly the
    cutoff.** This is why the comparison must be strictly greater-than. A
    `>=` comparison would fire immediately and burn all ten alerts on day one.
+3. **Dates are not always consecutive.** `2026-12-16` is missing from the list
+   today. Only dates *after* the cutoff matter, so a gap like this cannot cause
+   a false alert.
 
 > **Note on the experience filter.** `imax-70mm` means **IMAX 70mm** (15-perf) —
 > the premium format. It is not the same as `70mm`, which also matches plain
-> 5-perf 70mm prints. Both formats really are showing this film: on 2026-08-04
-> the API reported 32 sessions tagged `["IMAX","70mm"]` across 8 theatres, plus
-> 14 sessions tagged only `["70mm"]` at 4 other theatres.
+> 5-perf 70mm prints. For The Odyssey both formats were showing at the same
+> time, at different theatres.
 >
-> On the `dates/bookable` endpoint specifically, `imax-70mm`, `70mm` and `imax`
-> currently return an **identical** list of 45 dates, because the film happens
-> to play in IMAX 70mm on every day of its run. Using `imax-70mm` still matters:
-> if Cineplex ever opens plain-70mm dates without IMAX 70mm, the correct filter
-> is what stops you being alerted for the wrong format.
+> At this cinema, Dune: Part Three currently plays only in IMAX 70mm, so
+> `imax-70mm`, `70mm`, `imax` and no filter at all return an **identical** list
+> of 31 dates. Using `imax-70mm` still matters: if Cineplex ever opens
+> digital-only or plain-70mm dates further out, the correct filter is what
+> stops you being alerted for the wrong format.
 >
 > **The value is case-sensitive and fails silently.** `IMAX`, `70MM`,
 > `IMAX 70mm` and `imax70mm` all return HTTP 200 with `[]` rather than an error
@@ -147,40 +176,25 @@ Three observations about that response, all of which shaped the code:
 
 ## Read this before you deploy: Actions minutes
 
-> **This repository is deliberately public, and that is why.** Public
-> repositories get unlimited free Actions minutes, so the 15-minute schedule
-> runs uninterrupted. Nothing here is sensitive — the only key involved is
-> Cineplex's own public client-side key, which their website already serves to
-> every visitor. If you switch this repository to Private, read this section
-> first and change the schedule to match.
+GitHub Actions is free and unmetered for **public** repositories. This
+repository is deliberately public, and nothing in it is sensitive — the only
+key involved is Cineplex's own public client-side key, which their website
+already serves to every visitor.
 
-**This is the one thing most likely to quietly break your watcher.**
-
-GitHub Actions is free and unmetered for **public** repositories. For
-**private** repositories, a GitHub Free account includes **2,000 minutes per
-month**, and GitHub **rounds every job up to the nearest whole minute** — a job
-that takes 15 seconds is billed as one minute.
-
-Do the arithmetic for a 15-minute schedule:
+If you ever make it private, the twice-a-day schedule is still nowhere near the
+limit. A GitHub Free account includes **2,000 minutes per month** for private
+repositories, and GitHub rounds every job up to a whole minute:
 
 ```
- 4 runs/hour x 24 hours       =    96 runs per day
-96 runs/day x ~30.4 days      = ~2,918 runs per month
-                              = ~2,918 billed minutes per month
+ 2 runs/day x ~30.4 days      =  ~61 runs per month
+                              =  ~61 billed minutes per month
 ```
 
-That is roughly **46% over** the 2,000 free minutes. On a private repository
-with a Free account, Actions will stop running about **three weeks into each
-billing month**. GitHub Pro's 3,000 minutes covers it, but only barely.
+That is about 3% of the free allowance.
 
-Pick one of these:
-
-| Option | What to do | Result |
-|---|---|---|
-| **Make the repository public** *(recommended)* | Create it as Public instead of Private | Unlimited free minutes, keeps the full 15-minute cadence. There is nothing sensitive in this repository — see [About the subscription key](#about-the-subscription-key). |
-| **Keep it private, check every 30 minutes** | Change the cron to `7,37 * * * *` | ~1,460 minutes/month, comfortably inside the free tier. You would learn about new dates up to 30 minutes later. |
-| **Keep it private, only watch during the day** | Change the cron to `7,22,37,52 11-23 * * *` | ~1,580 minutes/month. Covers 7am–7pm Eastern, when box-office systems actually update. |
-| **Keep it private and 15-minute** | Change nothing | Works for ~3 weeks per month, then pauses until your quota resets on the 1st. |
+If you go back to checking more often, redo this arithmetic first. Every 15
+minutes is ~2,918 runs a month, which is over the free private allowance; see
+[Change the schedule](#change-the-schedule).
 
 You can check your usage any time at
 **[github.com/settings/billing](https://github.com/settings/billing)**.
@@ -206,7 +220,7 @@ is not yours, it grants no account access, and it identifies no user. It is
 configuration, not a credential.
 
 That is why it sits in plain sight in `check-cineplex.mjs` and why this project
-needs no GitHub Secret. The watcher makes four requests an hour — far less
+needs no GitHub Secret. The watcher makes two requests a day — far less
 traffic than a single person browsing the site.
 
 If Cineplex ever rotates that key you will start getting HTTP 401 failures. You
@@ -217,22 +231,22 @@ can fix it without touching the code — see
 
 ## About the cutoff and time zones
 
-The cutoff you asked for was `2026-09-16T00:00:00`, with no time zone. The code
-uses **`2026-09-16T00:00:00Z`**, explicitly UTC. Here is why that matters.
+The cutoff is the date `2027-01-14`. The code writes it as
+**`2027-01-14T00:00:00Z`**, explicitly UTC. Here is why that matters.
 
-JavaScript parses a naive date-*time* like `2026-09-16T00:00:00` as **local**
-time, but a naive date-*only* string like `2026-09-16` as **UTC**. Those two
+JavaScript parses a naive date-*time* like `2027-01-14T00:00:00` as **local**
+time, but a naive date-*only* string like `2027-01-14` as **UTC**. Those two
 rules disagree, and the disagreement is not theoretical:
 
 ```text
 On a machine set to America/Toronto:
-  Date.parse("2026-09-16T00:00:00")   ->  1789531200000
-  Date.parse("2026-09-16T00:00:00Z")  ->  1789516800000   (4 hours earlier)
+  Date.parse("2027-01-14T00:00:00")   ->  1799902800000
+  Date.parse("2027-01-14T00:00:00Z")  ->  1799884800000   (5 hours earlier)
 ```
 
 The API returns naive timestamps. If they were parsed as local time and
-compared against a UTC cutoff, the date `2026-09-16T00:00:00` — which is
-currently the *last bookable date* and must **not** trigger — would look four
+compared against a UTC cutoff, the date `2027-01-14T00:00:00` — which is
+currently the *last bookable date* and must **not** trigger — would look five
 hours later than the cutoff and fire a false alarm immediately.
 
 So the script normalises explicitly: **any timestamp with no time zone is
@@ -257,6 +271,12 @@ This is verified by tests that run the checker under `America/Toronto` and
 | 10th alert | `alertsSent: 10` | Increments, **commits**, then fails | ❌ failure → email 10 |
 | 11th run onward | `alertsSent: 10` | Logs "all 10 already triggered" | ✅ success, no email |
 
+With the twice-a-day schedule, alert 1 arrives at the first check after
+Cineplex opens a new date (so up to about 12 hours after it opens), and the
+other nine follow one per run over the next four and a half days or so. If
+that is more reminders than you want, lower `MAX_ALERTS` — see
+[Change how many alerts you get](#change-how-many-alerts-you-get).
+
 Once an alert sequence has started, the watcher **stops calling the Cineplex
 API**. The detection already happened, so re-checking could only introduce new
 ways to fail. It also means the sequence finishes even if Cineplex goes down
@@ -266,17 +286,22 @@ The state file looks like this:
 
 ```json
 {
-  "detectedAt": "2026-09-01T14:07:11.482Z",
-  "lastAlertAt": "2026-09-01T16:22:09.115Z",
+  "detectedAt": "2026-11-20T13:24:11.482Z",
+  "lastAlertAt": "2026-11-25T01:25:09.115Z",
   "alertsSent": 10,
   "maximumAlerts": 10,
   "dates": [
-    "2026-09-17T00:00:00",
-    "2026-09-18T00:00:00"
+    "2027-01-15T00:00:00",
+    "2027-01-16T00:00:00"
   ],
-  "cutoff": "2026-09-16T00:00:00Z",
-  "filmId": "37617",
-  "experiences": "70mm",
+  "bookingUrls": [
+    "https://www.cineplex.com/movie/dune-part-three?locationId=9406&date=1%2F15%2F2027",
+    "https://www.cineplex.com/movie/dune-part-three?locationId=9406&date=1%2F16%2F2027"
+  ],
+  "cutoff": "2027-01-14T00:00:00Z",
+  "filmId": "37998",
+  "locationId": "9406",
+  "experiences": "imax-70mm",
   "note": "Delete this file from the repository to reset the watcher and allow a new sequence of alerts."
 }
 ```
@@ -291,8 +316,8 @@ Node.js, a terminal, or WSL.
 ### Step 1 — Create the repository
 
 1. Go to **[github.com/new](https://github.com/new)**.
-2. **Repository name**: `cineplex-odyssey-watcher`
-3. **Description** (optional): `Watches Cineplex for new 70mm Odyssey dates`
+2. **Repository name**: `cineplex-movie-watcher`
+3. **Description** (optional): `Watches Cineplex for new IMAX 70mm dates`
 4. Choose **Private**, or **Public** if you followed the
    [Actions minutes](#read-this-before-you-deploy-actions-minutes) advice.
 5. Tick **Add a README file**. (This creates the default branch, which the
@@ -355,7 +380,7 @@ Settings > Actions > General > Workflow permissions > Read and write permissions
 
 1. Click the **Actions** tab.
 2. If you see a button offering to enable workflows, click it.
-3. You should see **Cineplex Odyssey 70mm watcher** listed on the left.
+3. You should see **Cineplex Dune 3 IMAX 70mm watcher** listed on the left.
 
 ### Step 8 — Turn on failure emails
 
@@ -389,7 +414,7 @@ it confirms email delivery end to end before you rely on it.
 
 Confirms the watcher can reach Cineplex and read the dates.
 
-1. **Actions** tab → click **Cineplex Odyssey 70mm watcher** on the left.
+1. **Actions** tab → click **Cineplex Dune 3 IMAX 70mm watcher** on the left.
 2. Click **Run workflow** (top right).
 3. Leave `force_alert` **unticked**.
 4. Click the green **Run workflow** button.
@@ -400,15 +425,15 @@ raw list of dates and:
 
 ```text
 NO QUALIFYING DATES. Nothing to do.
-Latest bookable date: 2026-09-16T00:00:00
-Cutoff (UTC):         2026-09-16T00:00:00Z
+Latest bookable date: 2027-01-14T00:00:00
+Cutoff (UTC):         2027-01-14T00:00:00Z
 ```
 
 No email. No `.alert-state.json` in your repository.
 
 ### Test B — a forced alert (checks your email actually arrives)
 
-1. **Actions** → **Cineplex Odyssey 70mm watcher** → **Run workflow**.
+1. **Actions** → **Cineplex Dune 3 IMAX 70mm watcher** → **Run workflow**.
 2. **Tick** the `force_alert` checkbox.
 3. Click **Run workflow**.
 
@@ -438,16 +463,18 @@ The forced drill proves email delivery, but it deliberately skips the detection
 logic. To exercise the whole real path — API call, state file, commit, failure,
 booking link — make a date that already exists qualify:
 
-1. In `check-cineplex.mjs`, set `CUTOFF_ISO = "2026-09-15T00:00:00Z"`.
+1. In `check-cineplex.mjs`, set `CUTOFF_ISO = "2027-01-13T00:00:00Z"`.
 2. Delete `.alert-state.json` if one exists.
 3. Run the workflow.
 
-`2026-09-16` is already bookable, so it now counts as a detection. You will get
+`2027-01-14` is already bookable, so it now counts as a detection. You will get
 a real alert, a real `.alert-state.json` commit, and a real booking link, and
-the sequence will continue on each run until it has sent ten.
+the sequence will continue on each run until it has sent ten. At twice a day
+that takes days, so use **Run workflow** to step through it faster if you want
+to see it finish.
 
 **To go back to normal watching, both steps are required:** set `CUTOFF_ISO`
-back to `"2026-09-16T00:00:00Z"` *and* delete `.alert-state.json`. Doing only
+back to `"2027-01-14T00:00:00Z"` *and* delete `.alert-state.json`. Doing only
 the first leaves the sequence running; doing only the second restarts it.
 
 ### Test C — confirm the schedule is live
@@ -455,12 +482,13 @@ the first leaves the sequence running; doing only the second restarts it.
 Scheduled runs only begin once the workflow file is on the **default branch**,
 which it is if you followed the steps above.
 
-Wait until the next `:07`, `:22`, `:37` or `:52` **UTC**, plus a delay — GitHub
-frequently starts scheduled runs 5–15 minutes late, and sometimes much later.
+Wait until the next **01:23 or 13:23 UTC** (8:23 AM / 8:23 PM in Montréal in
+winter, 9:23 AM / 9:23 PM in summer), plus a delay — GitHub frequently starts
+scheduled runs 5–15 minutes late, and sometimes much later.
 Then check the **Actions** tab for a run whose trigger says **Scheduled**
 rather than "Manually run by …".
 
-If nothing has appeared after an hour, see
+If nothing has appeared a couple of hours after a scheduled time, see
 [Troubleshooting → scheduled runs never start](#scheduled-runs-never-start).
 
 ---
@@ -488,18 +516,18 @@ Look at the annotation title at the top of the run:
 
 | Annotation title | Meaning | What to do |
 |---|---|---|
-| `Cineplex Odyssey 70mm alert` | **Real detection.** A bookable date later than the cutoff exists. | Go book tickets. |
-| `TEST ALERT (drill, not a real Odyssey date)` | You ticked `force_alert`. | Nothing. |
-| `Odyssey watcher TECHNICAL FAILURE` | Something broke: API down, HTTP error, bad JSON, push rejected. | See [Troubleshooting](#troubleshooting). |
+| `Cineplex Dune 3 IMAX 70mm alert` | **Real detection.** A bookable date later than the cutoff exists. | Go book tickets. |
+| `TEST ALERT (drill, not a real Dune date)` | You ticked `force_alert`. | Nothing. |
+| `Dune watcher TECHNICAL FAILURE` | Something broke: API down, HTTP error, bad JSON, push rejected. | See [Troubleshooting](#troubleshooting). |
 
 A real alert also prints a block like this in the log:
 
 ```text
 ===================================================================
- CINEPLEX ODYSSEY 70mm ALERT 3 OF 10
+ CINEPLEX DUNE: PART THREE IMAX 70mm ALERT 3 OF 10
 ===================================================================
-Cutoff (UTC):     2026-09-16T00:00:00Z
-Qualifying dates: 2026-09-17T00:00:00, 2026-09-18T00:00:00
+Cutoff (UTC):     2027-01-14T00:00:00Z
+Qualifying dates: 2027-01-15T00:00:00, 2027-01-16T00:00:00
 ```
 
 A technical failure prints:
@@ -534,8 +562,8 @@ The very next run will call the Cineplex API again from scratch. If a
 qualifying date still exists, it will start a **brand new sequence of ten
 alerts** — so only reset when you actually want that.
 
-To stop the watcher permanently instead, go to **Actions** → **Cineplex Odyssey
-70mm watcher** → the **⋯** menu → **Disable workflow**.
+To stop the watcher permanently instead, go to **Actions** → **Cineplex Dune 3
+IMAX 70mm watcher** → the **⋯** menu → **Disable workflow**.
 
 ---
 
@@ -546,12 +574,39 @@ To stop the watcher permanently instead, go to **Actions** → **Cineplex Odysse
 Edit `check-cineplex.mjs`, near the top:
 
 ```javascript
-const CUTOFF_ISO = "2026-09-16T00:00:00Z";
+const CUTOFF_ISO = "2027-01-14T00:00:00Z";
 ```
 
 Keep the trailing `Z`. If you drop it, the comparison becomes dependent on the
 runner's time zone. Delete `.alert-state.json` afterwards so the new cutoff is
 actually re-evaluated.
+
+### Watch a different film
+
+Everything film-specific is in the SETTINGS block at the top of
+`check-cineplex.mjs`:
+
+```javascript
+const CUTOFF_ISO = "2027-01-14T00:00:00Z";
+const FILM_ID    = "37998";             // Dune: Part Three
+const FILM_SLUG  = "dune-part-three";   // www.cineplex.com/movie/dune-part-three
+const FILM_TITLE = "Dune: Part Three";  // only used in logs and alerts
+```
+
+The easiest way to find the values for a new film:
+
+1. Open the film's page on cineplex.com, pick your cinema, and click the
+   **latest** date the site offers.
+2. Press <kbd>F12</kbd> → **Network**, and find the request to
+   `apis.cineplex.com/.../showtimes?...`. Its `filmId=` is `FILM_ID` and its
+   `date=` (M/D/YYYY) is your new cutoff. The film page's address gives
+   `FILM_SLUG`.
+3. Update the four lines above, and the `EXPERIENCES` / `LOCATION_ID` lines if
+   the format or cinema changed.
+4. Delete `.alert-state.json`, otherwise a finished sequence for the old film
+   stays "exhausted" and the new film is never checked.
+5. Run the workflow by hand (Test A) and confirm the log shows the dates you
+   expect and ends with `NO QUALIFYING DATES`.
 
 ### Change the cinema, or watch all of Canada
 
@@ -591,7 +646,7 @@ to apply immediately.
 Edit `.github/workflows/check-cineplex.yml`:
 
 ```yaml
-    - cron: "7,22,37,52 * * * *"
+    - cron: "23 1,13 * * *"
 ```
 
 The five fields are `minute hour day-of-month month day-of-week`, always in
@@ -599,10 +654,14 @@ The five fields are `minute hour day-of-month month day-of-week`, always in
 
 | Goal | Cron |
 |---|---|
-| Every 15 minutes (default) | `7,22,37,52 * * * *` |
-| Every 30 minutes | `7,37 * * * *` |
+| Twice a day, ~8:23 AM and PM Eastern (default) | `23 1,13 * * *` |
+| Four times a day | `23 1,7,13,19 * * *` |
 | Hourly | `7 * * * *` |
-| Every 15 min, 7am–7pm Eastern only | `7,22,37,52 11-23 * * *` |
+| Every 15 minutes | `7,22,37,52 * * * *` |
+
+More frequent runs also mean the ten alerts arrive closer together, and on a
+private repository they cost Actions minutes — see
+[Actions minutes](#read-this-before-you-deploy-actions-minutes).
 
 The offset minutes are deliberate. GitHub's own documentation notes that the
 `schedule` event "can be delayed during periods of high loads… High load times
@@ -621,8 +680,9 @@ is GitHub behaving normally".
 **Scheduled runs are not punctual.** GitHub queues scheduled workflows on
 shared infrastructure. Runs commonly start 5–15 minutes late and can be delayed
 much longer. GitHub's docs state that under sufficiently high load "some queued
-jobs may be dropped" — a run can be skipped entirely. Your ten alerts may
-therefore span more than 2.5 hours.
+jobs may be dropped" — a run can be skipped entirely. With only two runs a
+day, one dropped run means a 24-hour gap, and your ten alerts may span more
+than 4.5 days.
 
 **Cron is always UTC.** It does not follow Eastern Time and does not shift for
 daylight saving.
@@ -743,8 +803,8 @@ Open the run, read the annotation title at the top, then look at
 ### It emailed me ten times and I want it to stop
 
 Nothing to do — it stops on its own after ten. If you want it to stop
-immediately, disable the workflow: **Actions** → **Cineplex Odyssey 70mm
-watcher** → **⋯** → **Disable workflow**.
+immediately, disable the workflow: **Actions** → **Cineplex Dune 3 IMAX
+70mm watcher** → **⋯** → **Disable workflow**.
 
 ### I am not getting any emails at all
 
