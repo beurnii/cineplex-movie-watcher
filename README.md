@@ -38,7 +38,7 @@ create, and no secret to store.
 
 ## How it works
 
-Twice a day GitHub runs a small Node.js script. The script asks Cineplex which
+Every 6 hours GitHub runs a small Node.js script. The script asks Cineplex which
 dates are currently bookable for Dune: Part Three in IMAX 70mm, and compares
 them against a cutoff date.
 
@@ -53,7 +53,7 @@ then goes quiet.
 
 ```
                  ┌──────────────────────────────┐
-   twice a day   │  Does .alert-state.json       │
+   every 6 hours │  Does .alert-state.json       │
    ───────────►  │  exist in the repository?     │
                  └───────────┬──────────────────┘
                              │
@@ -96,9 +96,9 @@ emailed forever.
 | Experience filter | `imax-70mm` (IMAX 70mm, 15-perf) |
 | Cutoff | `2027-01-14T00:00:00Z` (UTC) |
 | Trigger condition | any bookable date **strictly later** than the cutoff |
-| Schedule | `23 1,13 * * *` — twice a day, 01:23 and 13:23 UTC |
+| Schedule | `1 0,6,12,18 * * *` — every 6 hours, 00:01, 06:01, 12:01 and 18:01 UTC |
 | Alerts per detection | 10 (one per run) |
-| Time to receive them all | roughly 4.5 days (the first at detection, then one every ~12 hours) |
+| Time to receive them all | roughly 2.25 days (the first at detection, then one every ~6 hours) |
 | State file | `.alert-state.json`, committed to the default branch |
 | Dependencies | none |
 | Secrets required | none |
@@ -181,16 +181,16 @@ repository is deliberately public, and nothing in it is sensitive — the only
 key involved is Cineplex's own public client-side key, which their website
 already serves to every visitor.
 
-If you ever make it private, the twice-a-day schedule is still nowhere near the
+If you ever make it private, the every-6-hours schedule is still nowhere near the
 limit. A GitHub Free account includes **2,000 minutes per month** for private
 repositories, and GitHub rounds every job up to a whole minute:
 
 ```
- 2 runs/day x ~30.4 days      =  ~61 runs per month
-                              =  ~61 billed minutes per month
+ 4 runs/day x ~30.4 days      = ~122 runs per month
+                              = ~122 billed minutes per month
 ```
 
-That is about 3% of the free allowance.
+That is about 6% of the free allowance.
 
 If you go back to checking more often, redo this arithmetic first. Every 15
 minutes is ~2,918 runs a month, which is over the free private allowance; see
@@ -220,7 +220,7 @@ is not yours, it grants no account access, and it identifies no user. It is
 configuration, not a credential.
 
 That is why it sits in plain sight in `check-cineplex.mjs` and why this project
-needs no GitHub Secret. The watcher makes two requests a day — far less
+needs no GitHub Secret. The watcher makes four requests a day — far less
 traffic than a single person browsing the site.
 
 If Cineplex ever rotates that key you will start getting HTTP 401 failures. You
@@ -271,9 +271,9 @@ This is verified by tests that run the checker under `America/Toronto` and
 | 10th alert | `alertsSent: 10` | Increments, **commits**, then fails | ❌ failure → email 10 |
 | 11th run onward | `alertsSent: 10` | Logs "all 10 already triggered" | ✅ success, no email |
 
-With the twice-a-day schedule, alert 1 arrives at the first check after
-Cineplex opens a new date (so up to about 12 hours after it opens), and the
-other nine follow one per run over the next four and a half days or so. If
+With the every-6-hours schedule, alert 1 arrives at the first check after
+Cineplex opens a new date (so up to about 6 hours after it opens), and the
+other nine follow one per run over the next two and a quarter days or so. If
 that is more reminders than you want, lower `MAX_ALERTS` — see
 [Change how many alerts you get](#change-how-many-alerts-you-get).
 
@@ -469,7 +469,7 @@ booking link — make a date that already exists qualify:
 
 `2027-01-14` is already bookable, so it now counts as a detection. You will get
 a real alert, a real `.alert-state.json` commit, and a real booking link, and
-the sequence will continue on each run until it has sent ten. At twice a day
+the sequence will continue on each run until it has sent ten. At every 6 hours
 that takes days, so use **Run workflow** to step through it faster if you want
 to see it finish.
 
@@ -482,8 +482,9 @@ the first leaves the sequence running; doing only the second restarts it.
 Scheduled runs only begin once the workflow file is on the **default branch**,
 which it is if you followed the steps above.
 
-Wait until the next **01:23 or 13:23 UTC** (8:23 AM / 8:23 PM in Montréal in
-winter, 9:23 AM / 9:23 PM in summer), plus a delay — GitHub frequently starts
+Wait until the next **00:01, 06:01, 12:01 or 18:01 UTC** (7:01 PM, 1:01 AM,
+7:01 AM or 1:01 PM in Montréal in winter; an hour later in summer), plus a
+delay — GitHub frequently starts
 scheduled runs 5–15 minutes late, and sometimes much later.
 Then check the **Actions** tab for a run whose trigger says **Scheduled**
 rather than "Manually run by …".
@@ -646,7 +647,7 @@ to apply immediately.
 Edit `.github/workflows/check-cineplex.yml`:
 
 ```yaml
-    - cron: "23 1,13 * * *"
+    - cron: "1 0,6,12,18 * * *"
 ```
 
 The five fields are `minute hour day-of-month month day-of-week`, always in
@@ -654,8 +655,8 @@ The five fields are `minute hour day-of-month month day-of-week`, always in
 
 | Goal | Cron |
 |---|---|
-| Twice a day, ~8:23 AM and PM Eastern (default) | `23 1,13 * * *` |
-| Four times a day | `23 1,7,13,19 * * *` |
+| Every 6 hours, 00:01/06:01/12:01/18:01 UTC (default) | `1 0,6,12,18 * * *` |
+| Twice a day | `23 1,13 * * *` |
 | Hourly | `7 * * * *` |
 | Every 15 minutes | `7,22,37,52 * * * *` |
 
@@ -667,6 +668,10 @@ The offset minutes are deliberate. GitHub's own documentation notes that the
 `schedule` event "can be delayed during periods of high loads… High load times
 include the start of every hour", and advises scheduling "at a different time
 of the hour". Avoid `0`, `15`, `30` and `45`.
+
+The default runs at `:01`, just after the busy top of the hour, so expect those
+runs to start a few minutes late. Moving them to a quieter minute (for example
+`7 0,6,12,18 * * *`) would make them start more reliably.
 
 Five minutes is the shortest interval GitHub allows.
 
@@ -680,9 +685,9 @@ is GitHub behaving normally".
 **Scheduled runs are not punctual.** GitHub queues scheduled workflows on
 shared infrastructure. Runs commonly start 5–15 minutes late and can be delayed
 much longer. GitHub's docs state that under sufficiently high load "some queued
-jobs may be dropped" — a run can be skipped entirely. With only two runs a
-day, one dropped run means a 24-hour gap, and your ten alerts may span more
-than 4.5 days.
+jobs may be dropped" — a run can be skipped entirely. With only four runs a
+day, one dropped run means a 12-hour gap, and your ten alerts may span more
+than 2.25 days.
 
 **Cron is always UTC.** It does not follow Eastern Time and does not shift for
 daylight saving.

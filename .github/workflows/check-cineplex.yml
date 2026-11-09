@@ -5,14 +5,13 @@ name: Cineplex Dune 3 IMAX 70mm watcher
 # ---------------------------------------------------------------------------
 on:
   schedule:
-    # Twice a day, at 01:23 and 13:23 UTC. GitHub cron is ALWAYS in UTC and
-    # does not follow daylight saving, so in Montréal that is:
-    #   8:23 AM and 8:23 PM while Eastern is on standard time (Nov-Mar)
-    #   9:23 AM and 9:23 PM while Eastern is on daylight time (Mar-Nov)
-    # The minute is deliberately not :00/:15/:30/:45. Those round times are
-    # the busiest moments on GitHub's scheduler, so runs queued then tend to
-    # start latest.
-    - cron: "23 1,13 * * *"
+    # Every 6 hours, at 00:01, 06:01, 12:01 and 18:01 UTC. GitHub cron is
+    # ALWAYS in UTC and does not follow daylight saving, so in Montréal that is:
+    #   7:01 PM, 1:01 AM, 7:01 AM, 1:01 PM on standard time (Nov-Mar)
+    #   8:01 PM, 2:01 AM, 8:01 AM, 2:01 PM on daylight time (Mar-Nov)
+    # GitHub's scheduler is busiest around the top of the hour, so expect
+    # these runs to start several minutes late (sometimes much later).
+    - cron: "1 0,6,12,18 * * *"
 
   # Lets you start a run yourself from the Actions tab at any time.
   workflow_dispatch:
@@ -213,5 +212,5 @@ jobs:
             echo "All ${MAX_ALERTS} notifications have already been triggered."
             echo "Delete .alert-state.json from the repository to reset the watcher."
           else
-            echo "No qualifying dates. Watcher is healthy and will check again in about 12 hours."
+            echo "No qualifying dates. Watcher is healthy and will check again in about 6 hours."
           fi
